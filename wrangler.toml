@@ -1,0 +1,23 @@
+name = "basketball-attendance-bot"
+main = "src/index.ts"
+compatibility_date = "2026-11-06"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[vars]
+TIMEZONE = "Europe/Kyiv"
+MAX_PLAYERS = "18"
+MIN_PLAYERS = "10"
+POLL_LOCATION = "Католицький"
+GAME_TIME = "20:30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "basketball-attendance"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["* * * * *"]

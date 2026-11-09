@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+coverage/
+*.log
+backups/
+.local-d1-validation*/
