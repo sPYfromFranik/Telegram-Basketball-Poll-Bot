@@ -93,7 +93,7 @@ npm run db:create
 npm run db:migrate:remote
 ```
 
-Успіх: усі міграції `0001`–`0004` мають статус success/✅. Локально команда `npm run db:migrate:local` створює окрему тестову базу.
+Успіх: усі міграції `0001`–`0005` мають статус success/✅. Локально команда `npm run db:migrate:local` створює окрему тестову базу.
 
 ## 6. Secrets і конфігурація
 

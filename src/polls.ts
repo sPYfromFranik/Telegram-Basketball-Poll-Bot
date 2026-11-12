@@ -1,7 +1,7 @@
 import type { Config, PollRow } from './types';
 import { currentWeekSchedule, isoNow, weeklySchedule, type PollScheduleOccurrence } from './time';
 import { TelegramClient, TelegramError } from './telegram';
-import { finalSummary } from './domain';
+import { closingReminder, finalSummary } from './domain';
 
 interface ScheduleRow {
   chat_id:string; enabled:number; create_local:string|null; close_local:string|null;
@@ -102,6 +102,22 @@ export async function closePoll(db:D1Database,tg:TelegramClient,cfg:Config,poll:
   }
 }
 
+export async function queueClosingReminders(db:D1Database,now=new Date()):Promise<void> {
+  const reminderWindowEnd=new Date(now.getTime()+60*60*1000).toISOString();
+  const polls=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND closing_reminder_processed_at IS NULL AND close_deadline>? AND close_deadline<=? ORDER BY id").bind(now.toISOString(),reminderWindowEnd).all<PollRow>()).results;
+  for(const poll of polls) {
+    const count=await db.prepare("SELECT COUNT(*) count FROM current_votes WHERE poll_instance_id=? AND vote='yes'").bind(poll.id).first<{count:number}>();
+    if((count?.count??0)>=poll.max_players) {
+      await db.prepare("UPDATE poll_instances SET closing_reminder_processed_at=? WHERE id=? AND status='open' AND closing_reminder_processed_at IS NULL").bind(isoNow(now),poll.id).run();
+      continue;
+    }
+    await db.batch([
+      db.prepare("UPDATE poll_instances SET closing_reminder_processed_at=? WHERE id=? AND status='open' AND closing_reminder_processed_at IS NULL").bind(isoNow(now),poll.id),
+      db.prepare("INSERT OR IGNORE INTO notification_outbox(dedupe_key,poll_instance_id,kind,chat_id,text,available_at) VALUES(?,?,'closing_reminder',?,?,?)").bind(`closing-reminder:${poll.id}`,poll.id,poll.chat_id,closingReminder(),isoNow(now))
+    ]);
+  }
+}
+
 export async function reconcileLifecycle(db:D1Database,tg:TelegramClient,cfg:Config,now=new Date()):Promise<void> {
   const rows=(await db.prepare('SELECT * FROM poll_schedule WHERE enabled=1').all<ScheduleRow>()).results;
   const targets:ScheduleTarget[]=rows.flatMap(row=>{
@@ -114,6 +130,7 @@ export async function reconcileLifecycle(db:D1Database,tg:TelegramClient,cfg:Con
     targets.push({chatId:cfg.chatId,schedule,parameters:defaultParameters(cfg,schedule)});
   }
   for(const target of targets) if(now>=target.schedule.createAt && now<target.schedule.closeAt) await createPoll(db,tg,target.chatId,target.schedule,target.parameters,now);
+  await queueClosingReminders(db,now);
   await db.prepare("UPDATE poll_instances SET status='open',closing_started_at=NULL WHERE status='closing' AND final_summary_queued_at IS NULL AND closing_started_at<?").bind(new Date(now.getTime()-120000).toISOString()).run();
   const due=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND close_deadline<=? ORDER BY id").bind(now.toISOString()).all<PollRow>()).results;
   for(const poll of due) await closePoll(db,tg,cfg,poll,now);

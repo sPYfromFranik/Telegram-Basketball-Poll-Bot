@@ -8,6 +8,7 @@ const sql=readFileSync(resolve('migrations/0001_initial.sql'),'utf8');
 const scheduleSql=readFileSync(resolve('migrations/0002_poll_schedule.sql'),'utf8');
 const perChatScheduleSql=readFileSync(resolve('migrations/0003_per_chat_schedule.sql'),'utf8');
 const pollParametersSql=readFileSync(resolve('migrations/0004_poll_parameters.sql'),'utf8');
+const closingReminderSql=readFileSync(resolve('migrations/0005_closing_reminder.sql'),'utf8');
 const cfg:Config={botToken:'x',webhookSecret:'s',chatId:'-1001',organizerId:'1',allowedChatIds:['-1001'],timezone:'Europe/Kyiv',maxPlayers:18,minPlayers:10,location:'Католицький',gameTime:'20:30'};
 describe('durable idempotency contracts',()=>{
   it('prevents a weekly poll from being created twice',()=>expect(sql).toMatch(/event_date TEXT NOT NULL UNIQUE/));
@@ -21,6 +22,14 @@ describe('durable idempotency contracts',()=>{
   it('persists per-poll limits so later schedule edits cannot change an active poll',()=>{
     expect(pollParametersSql).toContain('poll_instances ADD COLUMN max_players');
     expect(pollParametersSql).toContain('poll_instances ADD COLUMN min_players');
+  });
+  it('persists the one-time closing reminder decision',()=>expect(closingReminderSql).toContain('closing_reminder_processed_at'));
+  it('queues a closing reminder only within the final hour and skips a full or over-capacity poll',()=>{
+    const polls=readFileSync(resolve('src/polls.ts'),'utf8');
+    expect(polls).toContain("close_deadline>? AND close_deadline<=?");
+    expect(polls).toContain("(count?.count??0)>=poll.max_players");
+    expect(polls).toContain("'closing_reminder'");
+    expect(polls).toContain('closing-reminder:${poll.id}');
   });
   it('routes reserve and promotion notifications only to the shared chat',()=>{
     const votes=readFileSync(resolve('src/votes.ts'),'utf8');

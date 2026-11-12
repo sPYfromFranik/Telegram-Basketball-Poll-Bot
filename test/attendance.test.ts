@@ -1,4 +1,5 @@
 import { describe,expect,it } from 'vitest';
+import { closingReminder } from '../src/domain';
 import { AttendanceModel } from '../src/model';
 import { assignQueue,finalSummary } from '../src/domain';
 
@@ -16,6 +17,13 @@ describe('attendance queue',()=>{
   it('ignores duplicate webhook delivery',()=>{const m=filled(1);expect(m.apply('1','no',2)).toBe(true);expect(m.apply('1','yes',2)).toBe(false);expect(m.get('1')?.vote).toBe('no');});
   it('ignores an out-of-order older update',()=>{const m=new AttendanceModel(18);m.apply('1','no',20);m.apply('1','yes',19);expect(m.get('1')?.vote).toBe('no');});
   it('deterministically breaks identical timestamps with sequence',()=>expect(assignQueue([{userId:'a',name:'A',applicationId:8},{userId:'b',name:'B',applicationId:9}],1).map(x=>x.status)).toEqual(['confirmed','waiting']));
+});
+
+describe('closing reminder',()=>{
+  it('tells participants to join or change their vote now',()=>{
+    expect(closingReminder()).toContain('залишилася година');
+    expect(closingReminder()).toContain('додатися або змінити свій голос');
+  });
 });
 describe('closing decisions',()=>{
   it('cancels with fewer than 10 applicants',()=>expect(finalSummary('1',9,18,10)).toContain('Зал скасовується'));
