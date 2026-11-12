@@ -15,6 +15,9 @@ export function finalSummary(organizerId:string,yes:number,max:number,min:number
   if (yes<min) return `${org}, голосування завершено.\n\nЗаявок «Буду»: ${yes}\n\nНедостатньо учасників для гри.\nЗал скасовується.`;
   return `${org}, голосування завершено.\n\nЗаявок «Буду»: ${yes}\nОсновний склад: ${Math.min(yes,max)}\nРезерв: ${Math.max(0,yes-max)}\n\nДостатньо учасників для гри.\nЗал бронюється.`;
 }
+export function closingReminder():string {
+  return '⏳ До завершення опитування залишилася година.\n\nЧас добігає кінця. Якщо ви ще хочете додатися або змінити свій голос — краще зробити це вже зараз.';
+}
 export function statusText(title:string,close:string,confirmed:string[],waiting:string[],declined:number,link?:string):string {
   const lines=[`<b>${escapeHtml(title)}</b>`,`Закриття: ${escapeHtml(close)}`,'',`<b>Основний склад (${confirmed.length})</b>`,...confirmed.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`<b>Резерв (${waiting.length})</b>`,...waiting.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`«Не буду»: ${declined}`];
   if (link) lines.push('',`<a href="${escapeHtml(link)}">Відкрити голосування</a>`);

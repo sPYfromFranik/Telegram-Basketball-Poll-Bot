@@ -29,6 +29,7 @@ export interface PollRow {
   id: number; telegram_poll_id: string|null; message_id: number|null; chat_id: string;
   event_date: string; title: string; created_at: string|null; close_deadline: string;
   status: 'creating'|'open'|'closing'|'closed'|'create_failed'; final_summary_queued_at: string|null;
+  closing_reminder_processed_at: string|null;
   creation_token?: string|null;
   creation_claimed_at?: string|null; closing_started_at?: string|null;
   max_players: number; min_players: number;

@@ -7,6 +7,7 @@ Production-oriented Telegram attendance bot for a recurring basketball game. It 
 - Strict TypeScript Worker with `/health` and secret-protected `/webhook` endpoints.
 - D1 transactional ingestion, `update_id` deduplication, monotonic per-user ordering, immutable vote history, active-application sequence, queue reconciliation lock, and durable notification outbox.
 - Native Telegram `close_date` plus periodic Cron reconciliation and `stopPoll` fallback.
+- One hour before closing, a one-time reminder is sent unless «Буду» votes already exceed the poll maximum.
 - Commands: `/start`, `/help`, `/status`, `/my_status`, and organizer-only `/schedule`, `/disable_poll`, `/history`, `/create_poll`, `/close_poll`, `/reconcile`.
 - Group waiting/promotion messages and ID-based HTML mentions when no username exists.
 - Kyiv DST-safe scheduling based on `Intl` and the IANA `Europe/Kyiv` zone.

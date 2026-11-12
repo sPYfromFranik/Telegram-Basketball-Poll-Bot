@@ -16,7 +16,7 @@ GAME_TIME = "20:30"
 [[d1_databases]]
 binding = "DB"
 database_name = "basketball-attendance"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "a1246296-e778-4141-8a6f-74a157aaf8b2"
 migrations_dir = "migrations"
 
 [triggers]
