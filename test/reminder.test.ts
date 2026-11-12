@@ -25,8 +25,8 @@ function reminderDb(yesCount:number,maxPlayers=18) {
 describe('one-hour closing reminder',()=>{
   const now=new Date('2026-11-12T11:00:00.000Z');
 
-  it('queues the reminder when Буду equals the maximum',async()=>{
-    const {db,batch,statements}=reminderDb(18);
+  it('queues the reminder when Буду is below the maximum',async()=>{
+    const {db,batch,statements}=reminderDb(17);
     await queueClosingReminders(db,now);
     expect(batch).toHaveBeenCalledOnce();
     const insert=statements.find(item=>item.sql.includes("'closing_reminder'"));
@@ -35,8 +35,8 @@ describe('one-hour closing reminder',()=>{
     expect(insert?.params.some(value=>typeof value==='string'&&value.includes('залишилася година'))).toBe(true);
   });
 
-  it('records the decision without queuing when Буду exceeds the maximum',async()=>{
-    const {db,batch,update}=reminderDb(19);
+  it.each([18,19])('records the decision without queuing when Буду is %i',async yesCount=>{
+    const {db,batch,update}=reminderDb(yesCount);
     await queueClosingReminders(db,now);
     expect(update).toHaveBeenCalledOnce();
     expect(batch).not.toHaveBeenCalled();

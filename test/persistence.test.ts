@@ -24,10 +24,10 @@ describe('durable idempotency contracts',()=>{
     expect(pollParametersSql).toContain('poll_instances ADD COLUMN min_players');
   });
   it('persists the one-time closing reminder decision',()=>expect(closingReminderSql).toContain('closing_reminder_processed_at'));
-  it('queues a closing reminder only within the final hour and skips an over-capacity poll',()=>{
+  it('queues a closing reminder only within the final hour and skips a full or over-capacity poll',()=>{
     const polls=readFileSync(resolve('src/polls.ts'),'utf8');
     expect(polls).toContain("close_deadline>? AND close_deadline<=?");
-    expect(polls).toContain("(count?.count??0)>poll.max_players");
+    expect(polls).toContain("(count?.count??0)>=poll.max_players");
     expect(polls).toContain("'closing_reminder'");
     expect(polls).toContain('closing-reminder:${poll.id}');
   });

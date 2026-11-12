@@ -107,7 +107,7 @@ export async function queueClosingReminders(db:D1Database,now=new Date()):Promis
   const polls=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND closing_reminder_processed_at IS NULL AND close_deadline>? AND close_deadline<=? ORDER BY id").bind(now.toISOString(),reminderWindowEnd).all<PollRow>()).results;
   for(const poll of polls) {
     const count=await db.prepare("SELECT COUNT(*) count FROM current_votes WHERE poll_instance_id=? AND vote='yes'").bind(poll.id).first<{count:number}>();
-    if((count?.count??0)>poll.max_players) {
+    if((count?.count??0)>=poll.max_players) {
       await db.prepare("UPDATE poll_instances SET closing_reminder_processed_at=? WHERE id=? AND status='open' AND closing_reminder_processed_at IS NULL").bind(isoNow(now),poll.id).run();
       continue;
     }
