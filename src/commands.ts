@@ -70,7 +70,7 @@ async function sendStatus(db:D1Database,tg:TelegramClient,cfg:Config,chatId:stri
   const confirmed=rows.filter(r=>r.status==='confirmed').map(personName);
   const waiting=rows.filter(r=>r.status==='waiting').map(personName);
   const declined=rows.filter(r=>r.vote==='no').length;
-  return tg.sendMessage(chatId,statusText(poll.title,new Date(poll.close_deadline).toLocaleString('uk-UA',{timeZone:cfg.timezone}),confirmed,waiting,declined,pollLink(poll)));
+  return tg.sendMessage(chatId,statusText(poll.title,new Date(poll.vote_close_deadline??poll.close_deadline).toLocaleString('uk-UA',{timeZone:cfg.timezone}),confirmed,waiting,declined,pollLink(poll)));
 }
 function help():string { return `<b>Команди</b>\n/start — показати цю довідку\n/help — ця довідка\n/status — склад і резерв\n/my_status — мій статус\n\n<b>Організатор</b>\n/chat_id — показати ID групи для allowlist\n/schedule ГГ:ХХ ГГ:ХХ — старт і закриття сьогодні, далі щотижня\n/schedule ДД.ММ.РРРР ГГ:ХХ ДД.ММ.РРРР ГГ:ХХ — повний розклад\nДодатково: <code>--location "Назва залу" --game-date ДД.ММ.РРРР --game-time ГГ:ХХ --max 18 --min 10</code>\n/disable_poll — вимкнути майбутні автоматичні опитування\n/create_poll — створити вручну\n/close_poll — закрити активне\n/history, /reconcile\n\n/schedule_poll — сумісний аліас. Без додаткових параметрів використовуються місце з конфігурації, дата закриття голосування, час 20:30 та ліміти 18/10. Час — київський. Кожна дозволена група має незалежний розклад.`; }
 export async function handleCommand(db:D1Database,tg:TelegramClient,cfg:Config,message:Message,updateId:number,now=new Date()):Promise<void> {
@@ -108,7 +108,7 @@ export async function handleCommand(db:D1Database,tg:TelegramClient,cfg:Config,m
       if(game.utc<=close.utc||game.utc.getTime()-close.utc.getTime()>7*86400000) throw new Error('Гра має починатися після закриття голосування, але не пізніше ніж через 7 днів.');
       await saveWeeklySchedule(db,reply,start.stamp,close.stamp,{location,gameDate:game.stamp.slice(0,10),gameTime,maxPlayers,minPlayers},userId,now);
       await reconcileLifecycle(db,tg,cfg,now);
-      await tg.sendMessage(reply,`Щотижневий розклад увімкнено.\nСтарт голосування: <b>${startDate} ${startTime}</b>\nЗакриття: <b>${closeDate} ${closeTime}</b>\nГра: <b>${escapeHtml(location)}, ${gameDate} ${gameTime}</b>\nГравців: <b>${minPlayers}–${maxPlayers}</b>\nЧасовий пояс: ${escapeHtml(cfg.timezone)}.`);
+      await tg.sendMessage(reply,`Щотижневий розклад увімкнено.\nСтарт голосування: <b>${startDate} ${startTime}</b>\nКонтроль мінімального складу: <b>${closeDate} ${closeTime}</b>\nГолосування до: <b>${gameDate} ${gameTime}</b>\nГра: <b>${escapeHtml(location)}, ${gameDate} ${gameTime}</b>\nГравців: <b>${minPlayers}–${maxPlayers}</b>\nЧасовий пояс: ${escapeHtml(cfg.timezone)}.`);
     } catch(error) { await tg.sendMessage(reply,error instanceof Error?escapeHtml(error.message):'Не вдалося зберегти розклад.'); }
     return;
   }

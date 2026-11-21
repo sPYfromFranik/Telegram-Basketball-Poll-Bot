@@ -68,6 +68,10 @@ export function localDateText(date:Date,zone:string):string {
   const p=localParts(date,zone);
   return `${String(p.day).padStart(2,'0')}.${String(p.month).padStart(2,'0')}.${p.year}`;
 }
+export function localDateTimeText(date:Date,zone:string):string {
+  const p=localParts(date,zone);
+  return `${String(p.day).padStart(2,'0')}.${String(p.month).padStart(2,'0')}.${p.year} ${String(p.hour).padStart(2,'0')}:${String(p.minute).padStart(2,'0')}`;
+}
 function atWeek(stampValue:string,weeks:number,zone:string):Date {
   const p=parsedLocalStamp(stampValue);
   const calendar=new Date(Date.UTC(p.year,p.month-1,p.day+weeks*7));

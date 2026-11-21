@@ -33,10 +33,10 @@ export class TelegramClient {
   sendMessage(chatId:string,text:string,extra:Record<string,unknown>={}) {
     return this.call<{message_id:number}>('sendMessage',{chat_id:chatId,text,parse_mode:'HTML',disable_web_page_preview:true,...extra});
   }
-  sendPoll(chatId:string,question:string,closeDate:number) {
+  sendPoll(chatId:string,question:string,closeDate:number,description:string) {
     return this.call<{message_id:number;poll:{id:string}}>('sendPoll',{
       chat_id:chatId,question,options:[{text:'Буду'},{text:'Не буду'}],is_anonymous:false,
-      allows_multiple_answers:false,allows_revoting:true,close_date:closeDate
+      allows_multiple_answers:false,allows_revoting:true,close_date:closeDate,description
     });
   }
   stopPoll(chatId:string,messageId:number) { return this.call('stopPoll',{chat_id:chatId,message_id:messageId}); }

@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { closingReminder } from '../src/domain';
+import { closingReminder, pollDescription, quorumReached, shouldSendWithdrawalNotice, withdrawalNotice } from '../src/domain';
 import { AttendanceModel } from '../src/model';
 import { assignQueue,finalSummary } from '../src/domain';
 
@@ -20,13 +20,22 @@ describe('attendance queue',()=>{
 });
 
 describe('closing reminder',()=>{
-  it('tells participants to join or change their vote now',()=>{
+  it('explains the quorum checkpoint without claiming that voting ends',()=>{
     expect(closingReminder()).toContain('залишилася година');
-    expect(closingReminder()).toContain('додатися або змінити свій голос');
+    expect(closingReminder()).toContain('залишиться відкритим до початку гри');
   });
+});
+describe('poll description',()=>{
+  it('shows the quorum deadline and minimum player count',()=>expect(pollDescription('11.11.2026 11:55',10)).toBe('Якщо до 11.11.2026 11:55 не буде щонайменше 10 охочих — голосування автоматично закриється, а зал буде скасовано.'));
 });
 describe('closing decisions',()=>{
   it('cancels with fewer than 10 applicants',()=>expect(finalSummary('1',9,18,10)).toContain('Зал скасовується'));
   it('books with exactly 10 applicants',()=>expect(finalSummary('1',10,18,10)).toContain('Зал бронюється'));
   it('counts reserve applicants above 18',()=>expect(finalSummary('1',21,18,10)).toContain('Резерв: 3'));
+  it('keeps a qualified poll open until the game time',()=>expect(quorumReached('1',10,'11.11.2026, 20:30:00')).toContain('Голосування залишається відкритим до 11.11.2026, 20:30:00'));
+  it('announces a late confirmed withdrawal when no reserve remains',()=>{
+    expect(shouldSendWithdrawalNotice(17,18,10,10)).toBe(true);
+    expect(withdrawalNotice('7','Player',17)).toContain('Кількість гравців наразі складає: 17');
+  });
+  it('defers to the queue-promotion notice while the poll is over capacity',()=>expect(shouldSendWithdrawalNotice(19,18,19,10)).toBe(false));
 });

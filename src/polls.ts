@@ -1,7 +1,8 @@
 import type { Config, PollRow } from './types';
-import { currentWeekSchedule, isoNow, weeklySchedule, type PollScheduleOccurrence } from './time';
+import { currentWeekSchedule, isoNow, localDateTime, localDateTimeText, weeklySchedule, type PollScheduleOccurrence } from './time';
 import { TelegramClient, TelegramError } from './telegram';
-import { closingReminder, finalSummary } from './domain';
+import { closingReminder, finalSummary, pollDescription, quorumReached } from './domain';
+import { countYesAt } from './vote-counts';
 
 interface ScheduleRow {
   chat_id:string; enabled:number; create_local:string|null; close_local:string|null;
@@ -53,11 +54,12 @@ export async function disableWeeklySchedule(db:D1Database,chatId:string,userId:s
     .bind(chatId,isoNow(now),userId).run();
 }
 
-async function createPoll(db:D1Database,tg:TelegramClient,chatId:string,s:PollScheduleOccurrence,settings:PollParameters,now:Date):Promise<PollRow> {
+async function createPoll(db:D1Database,tg:TelegramClient,chatId:string,s:PollScheduleOccurrence,settings:PollParameters,timezone:string,now:Date):Promise<PollRow> {
   const [,month,day]=settings.gameDate.split('-');
   const title=`${settings.location} (${day}.${month}), ${settings.gameTime}`; const owner=crypto.randomUUID();
   const eventKey=`${chatId}:${s.eventKey}`;
-  await db.prepare("INSERT OR IGNORE INTO poll_instances(chat_id,event_date,title,close_deadline,status,creation_token,creation_claimed_at,max_players,min_players) VALUES(?,?,?,?,'creating',?,?,?,?)").bind(chatId,eventKey,title,s.closeAt.toISOString(),owner,isoNow(now),settings.maxPlayers,settings.minPlayers).run();
+  const voteClosesAt=localDateTime(`${day}.${month}.${settings.gameDate.slice(0,4)}`,settings.gameTime,timezone).utc;
+  await db.prepare("INSERT OR IGNORE INTO poll_instances(chat_id,event_date,title,close_deadline,vote_close_deadline,status,creation_token,creation_claimed_at,max_players,min_players) VALUES(?,?,?,?,?,'creating',?,?,?,?)").bind(chatId,eventKey,title,s.closeAt.toISOString(),voteClosesAt.toISOString(),owner,isoNow(now),settings.maxPlayers,settings.minPlayers).run();
   let row=await db.prepare('SELECT * FROM poll_instances WHERE chat_id=? AND event_date=?').bind(chatId,eventKey).first<PollRow>();
   if(!row) throw new Error('Failed to reserve weekly poll');
   const staleClaim=!row.creation_claimed_at || new Date(row.creation_claimed_at).getTime()<now.getTime()-120000;
@@ -67,7 +69,8 @@ async function createPoll(db:D1Database,tg:TelegramClient,chatId:string,s:PollSc
   }
   if(row.creation_token!==owner) return row;
   try {
-    const message=await tg.sendPoll(chatId,title,Math.floor(s.closeAt.getTime()/1000));
+    const description=pollDescription(localDateTimeText(s.closeAt,timezone),settings.minPlayers);
+    const message=await tg.sendPoll(chatId,title,Math.floor(voteClosesAt.getTime()/1000),description);
     await db.prepare("UPDATE poll_instances SET telegram_poll_id=?,message_id=?,created_at=?,status='open',creation_token=NULL,creation_claimed_at=NULL WHERE id=? AND creation_token=?").bind(message.poll.id,message.message_id,isoNow(now),row.id,owner).run();
   } catch(error) {
     await db.prepare("UPDATE poll_instances SET status='create_failed',creation_token=NULL,creation_claimed_at=NULL WHERE id=? AND creation_token=?").bind(row.id,owner).run(); throw error;
@@ -79,7 +82,7 @@ export async function createWeeklyPoll(db:D1Database,tg:TelegramClient,cfg:Confi
   const s=await occurrence(db,cfg,chatId,now);
   if(!s) throw new Error('Для цього чату спочатку налаштуйте /schedule.');
   const row=await db.prepare('SELECT * FROM poll_schedule WHERE chat_id=?').bind(chatId).first<ScheduleRow>();
-  return createPoll(db,tg,chatId,s,row?parameters(cfg,row,s):defaultParameters(cfg,s),now);
+  return createPoll(db,tg,chatId,s,row?parameters(cfg,row,s):defaultParameters(cfg,s),cfg.timezone,now);
 }
 
 export async function closePoll(db:D1Database,tg:TelegramClient,cfg:Config,poll:PollRow,now=new Date()):Promise<boolean> {
@@ -93,12 +96,45 @@ export async function closePoll(db:D1Database,tg:TelegramClient,cfg:Config,poll:
     const count=await db.prepare("SELECT COUNT(*) count FROM current_votes WHERE poll_instance_id=? AND vote='yes'").bind(poll.id).first<{count:number}>();
     const text=finalSummary(cfg.organizerId,count?.count??0,poll.max_players,poll.min_players);
     await db.batch([
-      db.prepare("UPDATE poll_instances SET status='closed',closing_started_at=NULL,final_summary_queued_at=COALESCE(final_summary_queued_at,?) WHERE id=? AND status='closing'").bind(isoNow(now),poll.id),
+      db.prepare("UPDATE poll_instances SET status='closed',closing_started_at=NULL,decision_processed_at=COALESCE(decision_processed_at,?),final_summary_queued_at=COALESCE(final_summary_queued_at,?) WHERE id=? AND status='closing'").bind(isoNow(now),isoNow(now),poll.id),
       db.prepare("INSERT OR IGNORE INTO notification_outbox(dedupe_key,poll_instance_id,kind,chat_id,text,available_at) VALUES(?,?,'final_summary',?,?,?)").bind(`final:${poll.id}`,poll.id,poll.chat_id,text,isoNow(now))
     ]);
     return true;
   } catch(error) {
     await db.prepare("UPDATE poll_instances SET status='open',closing_started_at=NULL WHERE id=? AND status='closing'").bind(poll.id).run(); throw error;
+  }
+}
+
+async function finishVoting(db:D1Database,tg:TelegramClient,poll:PollRow,now:Date):Promise<boolean> {
+  const claim=await db.prepare("UPDATE poll_instances SET status='closing',closing_started_at=? WHERE id=? AND status='open'").bind(isoNow(now),poll.id).run();
+  if((claim.meta.changes??0)===0) return false;
+  try {
+    if(poll.message_id!==null) {
+      try { await tg.stopPoll(poll.chat_id,poll.message_id); }
+      catch(error) { if(!(error instanceof TelegramError && error.status===400)) throw error; }
+    }
+    await db.prepare("UPDATE poll_instances SET status='closed',closing_started_at=NULL WHERE id=? AND status='closing'").bind(poll.id).run();
+    return true;
+  } catch(error) {
+    await db.prepare("UPDATE poll_instances SET status='open',closing_started_at=NULL WHERE id=? AND status='closing'").bind(poll.id).run();
+    throw error;
+  }
+}
+
+export async function processVotingDecisions(db:D1Database,tg:TelegramClient,cfg:Config,now=new Date()):Promise<void> {
+  const due=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND decision_processed_at IS NULL AND close_deadline<=? ORDER BY id").bind(now.toISOString()).all<PollRow>()).results;
+  for(const poll of due) {
+    const yes=await countYesAt(db,poll.id,poll.close_deadline);
+    if(yes<poll.min_players) {
+      await closePoll(db,tg,cfg,poll,now);
+      continue;
+    }
+    const processedAt=isoNow(now);
+    const voteDeadline=new Date(poll.vote_close_deadline??poll.close_deadline).toLocaleString('uk-UA',{timeZone:cfg.timezone});
+    await db.batch([
+      db.prepare("UPDATE poll_instances SET decision_processed_at=? WHERE id=? AND status='open' AND decision_processed_at IS NULL").bind(processedAt,poll.id),
+      db.prepare("INSERT OR IGNORE INTO notification_outbox(dedupe_key,poll_instance_id,kind,chat_id,text,available_at) SELECT ?,?,'quorum_reached',?,?,? FROM poll_instances WHERE id=? AND status='open' AND decision_processed_at=?").bind(`quorum:${poll.id}`,poll.id,poll.chat_id,quorumReached(cfg.organizerId,yes,voteDeadline),processedAt,poll.id,processedAt)
+    ]);
   }
 }
 
@@ -129,9 +165,10 @@ export async function reconcileLifecycle(db:D1Database,tg:TelegramClient,cfg:Con
     const schedule=currentWeekSchedule(now,cfg.timezone);
     targets.push({chatId:cfg.chatId,schedule,parameters:defaultParameters(cfg,schedule)});
   }
-  for(const target of targets) if(now>=target.schedule.createAt && now<target.schedule.closeAt) await createPoll(db,tg,target.chatId,target.schedule,target.parameters,now);
+  for(const target of targets) if(now>=target.schedule.createAt && now<target.schedule.closeAt) await createPoll(db,tg,target.chatId,target.schedule,target.parameters,cfg.timezone,now);
   await queueClosingReminders(db,now);
   await db.prepare("UPDATE poll_instances SET status='open',closing_started_at=NULL WHERE status='closing' AND final_summary_queued_at IS NULL AND closing_started_at<?").bind(new Date(now.getTime()-120000).toISOString()).run();
-  const due=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND close_deadline<=? ORDER BY id").bind(now.toISOString()).all<PollRow>()).results;
-  for(const poll of due) await closePoll(db,tg,cfg,poll,now);
+  await processVotingDecisions(db,tg,cfg,now);
+  const due=(await db.prepare("SELECT * FROM poll_instances WHERE status='open' AND COALESCE(vote_close_deadline,close_deadline)<=? ORDER BY id").bind(now.toISOString()).all<PollRow>()).results;
+  for(const poll of due) await finishVoting(db,tg,poll,now);
 }

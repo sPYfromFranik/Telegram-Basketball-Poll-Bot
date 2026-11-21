@@ -9,6 +9,7 @@ const scheduleSql=readFileSync(resolve('migrations/0002_poll_schedule.sql'),'utf
 const perChatScheduleSql=readFileSync(resolve('migrations/0003_per_chat_schedule.sql'),'utf8');
 const pollParametersSql=readFileSync(resolve('migrations/0004_poll_parameters.sql'),'utf8');
 const closingReminderSql=readFileSync(resolve('migrations/0005_closing_reminder.sql'),'utf8');
+const extendedVotingSql=readFileSync(resolve('migrations/0006_extended_voting_window.sql'),'utf8');
 const cfg:Config={botToken:'x',webhookSecret:'s',chatId:'-1001',organizerId:'1',allowedChatIds:['-1001'],timezone:'Europe/Kyiv',maxPlayers:18,minPlayers:10,location:'Католицький',gameTime:'20:30'};
 describe('durable idempotency contracts',()=>{
   it('prevents a weekly poll from being created twice',()=>expect(sql).toMatch(/event_date TEXT NOT NULL UNIQUE/));
@@ -24,6 +25,10 @@ describe('durable idempotency contracts',()=>{
     expect(pollParametersSql).toContain('poll_instances ADD COLUMN min_players');
   });
   it('persists the one-time closing reminder decision',()=>expect(closingReminderSql).toContain('closing_reminder_processed_at'));
+  it('persists separate quorum and voting deadlines',()=>{
+    expect(extendedVotingSql).toContain('vote_close_deadline');
+    expect(extendedVotingSql).toContain('decision_processed_at');
+  });
   it('queues a closing reminder only within the final hour and skips a full or over-capacity poll',()=>{
     const polls=readFileSync(resolve('src/polls.ts'),'utf8');
     expect(polls).toContain("close_deadline>? AND close_deadline<=?");
@@ -47,6 +52,12 @@ describe('durable idempotency contracts',()=>{
     await handleCommand(db,tg,cfg,message,44,new Date('2026-11-09T10:00:00Z'));
     expect(sendMessage).toHaveBeenCalledWith('-1001','Ця команда доступна лише організатору.');
   });
-  it('enforces the close deadline in the vote lookup',()=>expect(readFileSync(resolve('src/votes.ts'),'utf8')).toContain("close_deadline>?"));
+  it('accepts votes only until the separate voting deadline',()=>expect(readFileSync(resolve('src/votes.ts'),'utf8')).toContain("COALESCE(vote_close_deadline,close_deadline)>?"));
+  it('deduplicates post-deadline withdrawal notices and lets promotion notices take precedence',()=>{
+    const votes=readFileSync(resolve('src/votes.ts'),'utf8');
+    expect(votes).toContain("'post_deadline_withdrawal'");
+    expect(votes).toContain('post-deadline-withdrawal:${withdrawn.application_id}');
+    expect(votes).toContain('shouldSendWithdrawalNotice');
+  });
   it('makes reconciliation locks durable rather than process-local',()=>expect(sql).toContain("INSERT INTO job_locks(lock_name) VALUES ('queue-reconcile'), ('scheduler')"));
 });

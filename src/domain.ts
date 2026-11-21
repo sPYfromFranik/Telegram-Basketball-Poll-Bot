@@ -16,10 +16,22 @@ export function finalSummary(organizerId:string,yes:number,max:number,min:number
   return `${org}, голосування завершено.\n\nЗаявок «Буду»: ${yes}\nОсновний склад: ${Math.min(yes,max)}\nРезерв: ${Math.max(0,yes-max)}\n\nДостатньо учасників для гри.\nЗал бронюється.`;
 }
 export function closingReminder():string {
-  return '⏳ До завершення опитування залишилася година.\n\nЧас добігає кінця. Якщо ви ще хочете додатися або змінити свій голос — краще зробити це вже зараз.';
+  return '⏳ До контрольного часу голосування залишилася година.\n\nЯкщо мінімальна кількість гравців не набереться, голосування буде закрито. Якщо гравців вистачить, воно залишиться відкритим до початку гри.';
+}
+export function pollDescription(checkpoint:string,minPlayers:number):string {
+  return `Якщо до ${checkpoint} не буде щонайменше ${minPlayers} охочих — голосування автоматично закриється, а зал буде скасовано.`;
+}
+export function quorumReached(organizerId:string,yes:number,voteCloses:string):string {
+  return `${mention(organizerId,'Організатор')}, мінімальну кількість учасників набрано.\n\nЗаявок «Буду»: ${yes}\nЗал бронюється.\n\nГолосування залишається відкритим до ${escapeHtml(voteCloses)}.`;
+}
+export function shouldSendWithdrawalNotice(currentPlayers:number,maxPlayers:number,checkpointPlayers:number,minPlayers:number):boolean {
+  return currentPlayers<=maxPlayers && checkpointPlayers>=minPlayers;
+}
+export function withdrawalNotice(userId:string,name:string,currentPlayers:number):string {
+  return `${mention(userId,name)} скасував свій голос і не буде присутній. Кількість гравців наразі складає: ${currentPlayers}`;
 }
 export function statusText(title:string,close:string,confirmed:string[],waiting:string[],declined:number,link?:string):string {
-  const lines=[`<b>${escapeHtml(title)}</b>`,`Закриття: ${escapeHtml(close)}`,'',`<b>Основний склад (${confirmed.length})</b>`,...confirmed.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`<b>Резерв (${waiting.length})</b>`,...waiting.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`«Не буду»: ${declined}`];
+  const lines=[`<b>${escapeHtml(title)}</b>`,`Голосування до: ${escapeHtml(close)}`,'',`<b>Основний склад (${confirmed.length})</b>`,...confirmed.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`<b>Резерв (${waiting.length})</b>`,...waiting.map((n,i)=>`${i+1}. ${escapeHtml(n)}`),'',`«Не буду»: ${declined}`];
   if (link) lines.push('',`<a href="${escapeHtml(link)}">Відкрити голосування</a>`);
   return lines.join('\n');
 }
