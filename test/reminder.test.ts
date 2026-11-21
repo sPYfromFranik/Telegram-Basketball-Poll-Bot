@@ -6,6 +6,7 @@ function reminderDb(yesCount:number,maxPlayers=18) {
   const poll:PollRow={
     id:7,telegram_poll_id:'poll-7',message_id:70,chat_id:'-1001',event_date:'event-7',title:'Game',
     created_at:'2026-11-12T09:00:00.000Z',close_deadline:'2026-11-12T12:00:00.000Z',status:'open',
+    vote_close_deadline:'2026-11-12T18:30:00.000Z',decision_processed_at:null,
     final_summary_queued_at:null,closing_reminder_processed_at:null,max_players:maxPlayers,min_players:10
   };
   const statements:{sql:string;params:unknown[]}[]=[];

@@ -28,6 +28,7 @@ export type Vote = 'yes'|'no'|'retracted';
 export interface PollRow {
   id: number; telegram_poll_id: string|null; message_id: number|null; chat_id: string;
   event_date: string; title: string; created_at: string|null; close_deadline: string;
+  vote_close_deadline: string|null; decision_processed_at: string|null;
   status: 'creating'|'open'|'closing'|'closed'|'create_failed'; final_summary_queued_at: string|null;
   closing_reminder_processed_at: string|null;
   creation_token?: string|null;

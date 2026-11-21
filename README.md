@@ -6,8 +6,9 @@ Production-oriented Telegram attendance bot for a recurring basketball game. It 
 
 - Strict TypeScript Worker with `/health` and secret-protected `/webhook` endpoints.
 - D1 transactional ingestion, `update_id` deduplication, monotonic per-user ordering, immutable vote history, active-application sequence, queue reconciliation lock, and durable notification outbox.
-- Native Telegram `close_date` plus periodic Cron reconciliation and `stopPoll` fallback.
-- One hour before closing, a one-time reminder is sent only while «Буду» votes are below the poll maximum.
+- Native Telegram `close_date` keeps the poll open until the game date/time shown in its title, with periodic Cron reconciliation and `stopPoll` fallback.
+- The configured closing time is a quorum checkpoint: the poll closes early only when fewer than `MIN_PLAYERS` voted «Буду»; otherwise it remains open until the game starts.
+- One hour before the quorum checkpoint, a one-time reminder is sent only while «Буду» votes are below the poll maximum.
 - Commands: `/start`, `/help`, `/status`, `/my_status`, and organizer-only `/schedule`, `/disable_poll`, `/history`, `/create_poll`, `/close_poll`, `/reconcile`.
 - Group waiting/promotion messages and ID-based HTML mentions when no username exists.
 - Kyiv DST-safe scheduling based on `Intl` and the IANA `Europe/Kyiv` zone.
@@ -138,13 +139,15 @@ The local `.dev.vars` file is ignored by Git. Replace its example values only on
 
 ## Scheduling
 
-`/schedule` (with `/schedule_poll` retained as an alias) accepts the poll opening and closing times, followed by optional game settings:
+`/schedule` (with `/schedule_poll` retained as an alias) accepts the poll opening time and quorum-check time, followed by optional game settings:
 
 ```text
 /schedule 10.11.2026 12:00 12.11.2026 11:55 --location "Main court" --game-date 12.11.2026 --game-time 20:30 --max 18 --min 10
 ```
 
-The five game settings may also be supplied positionally in this order: location, game date, start time, maximum players, minimum players. Quote a location containing spaces. Omitted settings fall back to `POLL_LOCATION` (default `Католицький`), the poll closing date, `GAME_TIME` (default `20:30`), `MAX_PLAYERS` (default `18`), and `MIN_PLAYERS` (default `10`). Each created poll stores its own limits, so later schedule edits do not alter its confirmed list, waiting list, or final booking decision.
+The five game settings may also be supplied positionally in this order: location, game date, start time, maximum players, minimum players. Quote a location containing spaces. Omitted settings fall back to `POLL_LOCATION` (default `Католицький`), the quorum-check date, `GAME_TIME` (default `20:30`), `MAX_PLAYERS` (default `18`), and `MIN_PLAYERS` (default `10`). Each created poll stores both deadlines and its own limits, so later schedule edits do not alter an active poll.
+
+After a successful quorum check, a confirmed player who removes «Буду» triggers a group notice with the new player count. When a reserve player is promoted, the existing queue-promotion notice is sent instead.
 
 ## Reliability model and limitations
 

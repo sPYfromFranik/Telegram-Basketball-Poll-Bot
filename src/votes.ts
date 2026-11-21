@@ -1,13 +1,14 @@
 import type { PollAnswer, PollRow, TelegramUser, Vote } from './types';
-import { assignQueue, personName, voteFromOptions } from './domain';
+import { assignQueue, personName, shouldSendWithdrawalNotice, voteFromOptions, withdrawalNotice } from './domain';
 import { isoNow } from './time';
 import { mention } from './telegram';
+import { countYesAt } from './vote-counts';
 
 function token():string { return crypto.randomUUID(); }
 function optional(value:string|undefined):string|null { return value ?? null; }
 
 export async function ingestPollAnswer(db:D1Database,updateId:number,answer:PollAnswer,receivedAt:Date):Promise<boolean> {
-  const poll=await db.prepare("SELECT * FROM poll_instances WHERE telegram_poll_id=? AND status='open' AND close_deadline>?").bind(answer.poll_id,receivedAt.toISOString()).first<PollRow>();
+  const poll=await db.prepare("SELECT * FROM poll_instances WHERE telegram_poll_id=? AND status='open' AND COALESCE(vote_close_deadline,close_deadline)>?").bind(answer.poll_id,receivedAt.toISOString()).first<PollRow>();
   if (!poll || !answer.user) return false;
   const user=answer.user;
   const vote=voteFromOptions(answer.option_ids);
@@ -30,16 +31,16 @@ export async function ingestPollAnswer(db:D1Database,updateId:number,answer:Poll
 }
 
 interface ActiveRow { application_id:number; telegram_user_id:string; first_name:string; last_name:string|null; username:string|null; old_status:string }
-interface WithdrawalRow { application_id:number;telegram_user_id:string;first_name:string;last_name:string|null;username:string|null }
+interface WithdrawalRow { application_id:number;telegram_user_id:string;first_name:string;last_name:string|null;username:string|null;ended_at:string|null }
 export async function reconcileQueue(db:D1Database,pollId:number,now=new Date()):Promise<void> {
   const owner=token(); const expires=new Date(now.getTime()+30000).toISOString();
   const lock=await db.prepare("UPDATE job_locks SET owner_token=?,expires_at=? WHERE lock_name='queue-reconcile' AND (expires_at IS NULL OR expires_at<?)").bind(owner,expires,now.toISOString()).run();
   if ((lock.meta.changes??0)===0) return;
   try {
-    const poll=await db.prepare('SELECT chat_id,max_players FROM poll_instances WHERE id=?').bind(pollId).first<{chat_id:string;max_players:number}>();
+    const poll=await db.prepare('SELECT chat_id,max_players,min_players,close_deadline FROM poll_instances WHERE id=?').bind(pollId).first<{chat_id:string;max_players:number;min_players:number;close_deadline:string}>();
     if(!poll) return;
     const rows=(await db.prepare(`SELECT a.id application_id,a.telegram_user_id,p.first_name,p.last_name,p.username,a.queue_status old_status FROM applications a JOIN participants p ON p.telegram_user_id=a.telegram_user_id WHERE a.poll_instance_id=? AND a.active=1 ORDER BY a.id`).bind(pollId).all<ActiveRow>()).results;
-    const withdrawals=(await db.prepare(`SELECT a.id application_id,a.telegram_user_id,p.first_name,p.last_name,p.username FROM applications a JOIN participants p ON p.telegram_user_id=a.telegram_user_id WHERE a.poll_instance_id=? AND a.active=0 AND a.queue_status='confirmed' AND NOT EXISTS(SELECT 1 FROM notification_outbox o WHERE o.kind='promotion' AND o.related_application_id=a.id) ORDER BY a.ended_at,a.id`).bind(pollId).all<WithdrawalRow>()).results;
+    const withdrawals=(await db.prepare(`SELECT a.id application_id,a.telegram_user_id,p.first_name,p.last_name,p.username,a.ended_at FROM applications a JOIN participants p ON p.telegram_user_id=a.telegram_user_id WHERE a.poll_instance_id=? AND a.active=0 AND a.queue_status='confirmed' AND NOT EXISTS(SELECT 1 FROM notification_outbox o WHERE o.related_application_id=a.id AND o.kind IN ('promotion','post_deadline_withdrawal')) ORDER BY a.ended_at,a.id`).bind(pollId).all<WithdrawalRow>()).results;
     const assigned=assignQueue(rows.map(r=>({userId:r.telegram_user_id,name:personName(r),applicationId:r.application_id,oldStatus:r.old_status})),poll.max_players);
     const statements:D1PreparedStatement[]=[];
     for (const item of assigned) {
@@ -56,6 +57,14 @@ export async function reconcileQueue(db:D1Database,pollId:number,now=new Date())
         const withdrawalText=withdrawn?`${mention(withdrawn.telegram_user_id,personName(withdrawn))} більше не бере участі.\n\n`:'';
         const group=`${withdrawalText}${mention(row.telegram_user_id,item.name)} переходить із резерву в основний склад.\n\nОсновний склад: ${Math.min(assigned.length,poll.max_players)}/${poll.max_players}\nРезерв: ${Math.max(0,assigned.length-poll.max_players)}`;
         statements.push(db.prepare("INSERT OR IGNORE INTO notification_outbox(dedupe_key,poll_instance_id,kind,chat_id,text,available_at,source_application_id,related_application_id) VALUES(?,?,'promotion',?,?,?,?,?)").bind(`promotion:${item.applicationId}`,pollId,poll.chat_id,group,isoNow(now),item.applicationId,withdrawn?.application_id??null));
+      }
+    }
+    const lateWithdrawals=withdrawals.filter(withdrawn=>withdrawn.ended_at && withdrawn.ended_at>poll.close_deadline);
+    const checkpointPlayers=lateWithdrawals.length?await countYesAt(db,pollId,poll.close_deadline):0;
+    if(lateWithdrawals.length && shouldSendWithdrawalNotice(assigned.length,poll.max_players,checkpointPlayers,poll.min_players)) {
+      for(const withdrawn of lateWithdrawals) {
+        const text=withdrawalNotice(withdrawn.telegram_user_id,personName(withdrawn),assigned.length);
+        statements.push(db.prepare("INSERT OR IGNORE INTO notification_outbox(dedupe_key,poll_instance_id,kind,chat_id,text,available_at,related_application_id) VALUES(?,?,'post_deadline_withdrawal',?,?,?,?)").bind(`post-deadline-withdrawal:${withdrawn.application_id}`,pollId,poll.chat_id,text,isoNow(now),withdrawn.application_id));
       }
     }
     if(statements.length) await db.batch(statements);
