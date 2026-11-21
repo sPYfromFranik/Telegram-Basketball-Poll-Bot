@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { closingReminder, quorumReached, shouldSendWithdrawalNotice, withdrawalNotice } from '../src/domain';
+import { closingReminder, pollDescription, quorumReached, shouldSendWithdrawalNotice, withdrawalNotice } from '../src/domain';
 import { AttendanceModel } from '../src/model';
 import { assignQueue,finalSummary } from '../src/domain';
 
@@ -24,6 +24,9 @@ describe('closing reminder',()=>{
     expect(closingReminder()).toContain('залишилася година');
     expect(closingReminder()).toContain('залишиться відкритим до початку гри');
   });
+});
+describe('poll description',()=>{
+  it('shows the quorum deadline and minimum player count',()=>expect(pollDescription('11.11.2026 11:55',10)).toBe('Якщо до 11.11.2026 11:55 не буде щонайменше 10 охочих — голосування автоматично закриється, а зал буде скасовано.'));
 });
 describe('closing decisions',()=>{
   it('cancels with fewer than 10 applicants',()=>expect(finalSummary('1',9,18,10)).toContain('Зал скасовується'));

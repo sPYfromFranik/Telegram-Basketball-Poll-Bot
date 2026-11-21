@@ -1,7 +1,7 @@
 import type { Config, PollRow } from './types';
-import { currentWeekSchedule, isoNow, localDateTime, weeklySchedule, type PollScheduleOccurrence } from './time';
+import { currentWeekSchedule, isoNow, localDateTime, localDateTimeText, weeklySchedule, type PollScheduleOccurrence } from './time';
 import { TelegramClient, TelegramError } from './telegram';
-import { closingReminder, finalSummary, quorumReached } from './domain';
+import { closingReminder, finalSummary, pollDescription, quorumReached } from './domain';
 import { countYesAt } from './vote-counts';
 
 interface ScheduleRow {
@@ -69,7 +69,8 @@ async function createPoll(db:D1Database,tg:TelegramClient,chatId:string,s:PollSc
   }
   if(row.creation_token!==owner) return row;
   try {
-    const message=await tg.sendPoll(chatId,title,Math.floor(voteClosesAt.getTime()/1000));
+    const description=pollDescription(localDateTimeText(s.closeAt,timezone),settings.minPlayers);
+    const message=await tg.sendPoll(chatId,title,Math.floor(voteClosesAt.getTime()/1000),description);
     await db.prepare("UPDATE poll_instances SET telegram_poll_id=?,message_id=?,created_at=?,status='open',creation_token=NULL,creation_claimed_at=NULL WHERE id=? AND creation_token=?").bind(message.poll.id,message.message_id,isoNow(now),row.id,owner).run();
   } catch(error) {
     await db.prepare("UPDATE poll_instances SET status='create_failed',creation_token=NULL,creation_claimed_at=NULL WHERE id=? AND creation_token=?").bind(row.id,owner).run(); throw error;

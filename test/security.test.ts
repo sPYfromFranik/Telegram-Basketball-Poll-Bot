@@ -8,6 +8,14 @@ describe('Telegram safety and reliability',()=>{
   it('escapes untrusted Telegram HTML',()=>expect(escapeHtml('<b>&"')).toBe('&lt;b&gt;&amp;&quot;'));
   it('rejects malformed updates',()=>expect(parseUpdate({update_id:'bad'})).toBeNull());
   it('accepts poll vote retractions',()=>expect(parseUpdate({update_id:1,poll_answer:{poll_id:'p',option_ids:[],user:{id:1,first_name:'A'}}})).not.toBeNull());
+  it('sends the quorum rule in the native poll description',async()=>{
+    const f=vi.fn(async(_input:RequestInfo|URL,init?:RequestInit)=>{
+      expect(JSON.parse(String(init?.body))).toMatchObject({description:'Правило кворуму'});
+      return new Response(JSON.stringify({ok:true,result:{message_id:1,poll:{id:'p'}}}),{status:200,headers:{'content-type':'application/json'}});
+    });
+    await new TelegramClient(cfg,f as typeof fetch).sendPoll('-1001','Гра',1_800_000_000,'Правило кворуму');
+    expect(f).toHaveBeenCalledOnce();
+  });
   it('retries transient Telegram failures',async()=>{let n=0;const f=vi.fn(async()=>{n++;return new Response(JSON.stringify(n<3?{ok:false,description:'temporary'}:{ok:true,result:{message_id:1}}),{status:n<3?500:200,headers:{'content-type':'application/json'}})});await new TelegramClient(cfg,f as typeof fetch).sendMessage('1','x');expect(f).toHaveBeenCalledTimes(3);});
   it('does not retry permanent Telegram errors',async()=>{const f=vi.fn(async()=>new Response(JSON.stringify({ok:false,description:'forbidden'}),{status:403,headers:{'content-type':'application/json'}}));await expect(new TelegramClient(cfg,f as typeof fetch).sendMessage('1','x')).rejects.toThrow('forbidden');expect(f).toHaveBeenCalledOnce();});
 });

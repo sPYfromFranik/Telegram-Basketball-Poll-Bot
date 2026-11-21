@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { currentWeekSchedule,localDateTime,localParts,weeklySchedule,zonedDateToUtc } from '../src/time';
+import { currentWeekSchedule,localDateTime,localDateTimeText,localParts,weeklySchedule,zonedDateToUtc } from '../src/time';
 
 describe('Kyiv weekly schedule',()=>{
   it('calculates the upcoming Wednesday from Monday',()=>expect(currentWeekSchedule(new Date('2026-11-09T10:01:00Z'),'Europe/Kyiv').eventDate).toBe('2026-11-11'));
@@ -13,6 +13,7 @@ describe('Kyiv weekly schedule',()=>{
 
 describe('configurable weekly schedule',()=>{
   it('parses a Kyiv local date and time',()=>expect(localDateTime('06.11.2026','19:30','Europe/Kyiv').utc.toISOString()).toBe('2026-11-06T17:30:00.000Z'));
+  it('formats a Kyiv checkpoint for poll text',()=>expect(localDateTimeText(new Date('2026-11-11T09:55:00.000Z'),'Europe/Kyiv')).toBe('11.11.2026 11:55'));
   it('keeps the same Kyiv wall-clock time after DST changes',()=>{
     const s=weeklySchedule(new Date('2027-04-02T00:00:00Z'),'2026-11-06T19:30','2026-11-06T19:45','Europe/Kyiv');
     expect(localParts(s.createAt,'Europe/Kyiv')).toMatchObject({weekday:'Fri',hour:19,minute:30});

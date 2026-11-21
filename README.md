@@ -8,6 +8,7 @@ Production-oriented Telegram attendance bot for a recurring basketball game. It 
 - D1 transactional ingestion, `update_id` deduplication, monotonic per-user ordering, immutable vote history, active-application sequence, queue reconciliation lock, and durable notification outbox.
 - Native Telegram `close_date` keeps the poll open until the game date/time shown in its title, with periodic Cron reconciliation and `stopPoll` fallback.
 - The configured closing time is a quorum checkpoint: the poll closes early only when fewer than `MIN_PLAYERS` voted «Буду»; otherwise it remains open until the game starts.
+- Every poll description shows the local quorum-check date/time and the required minimum player count.
 - One hour before the quorum checkpoint, a one-time reminder is sent only while «Буду» votes are below the poll maximum.
 - Commands: `/start`, `/help`, `/status`, `/my_status`, and organizer-only `/schedule`, `/disable_poll`, `/history`, `/create_poll`, `/close_poll`, `/reconcile`.
 - Group waiting/promotion messages and ID-based HTML mentions when no username exists.

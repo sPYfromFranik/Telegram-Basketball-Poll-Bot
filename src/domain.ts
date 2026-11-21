@@ -18,6 +18,9 @@ export function finalSummary(organizerId:string,yes:number,max:number,min:number
 export function closingReminder():string {
   return '⏳ До контрольного часу голосування залишилася година.\n\nЯкщо мінімальна кількість гравців не набереться, голосування буде закрито. Якщо гравців вистачить, воно залишиться відкритим до початку гри.';
 }
+export function pollDescription(checkpoint:string,minPlayers:number):string {
+  return `Якщо до ${checkpoint} не буде щонайменше ${minPlayers} охочих — голосування автоматично закриється, а зал буде скасовано.`;
+}
 export function quorumReached(organizerId:string,yes:number,voteCloses:string):string {
   return `${mention(organizerId,'Організатор')}, мінімальну кількість учасників набрано.\n\nЗаявок «Буду»: ${yes}\nЗал бронюється.\n\nГолосування залишається відкритим до ${escapeHtml(voteCloses)}.`;
 }
